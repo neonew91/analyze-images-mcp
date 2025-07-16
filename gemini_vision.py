@@ -15,7 +15,29 @@ from fastmcp import FastMCP
 mcp = FastMCP("analyzeimage")
 
 # 默认API配置 - 在此处设置你的API密钥和主机地址
-DEFAULT_API_KEY = "请替换为你的API密钥"  # 请替换为你的API密钥
+DEFAULT_API_KEY = ""  # 请替换为你的API密钥
+
+user_prompt = '''
+    你是一个旅游攻略大师，你会基于获取到的小红书帖子，识别里面的图片内容，并进行总结汇总
+
+    # 任务要求
+    * 你会浏览获取到的小红书帖子中的图片，并描述图片中的具体的地点（比如不能只是卢浮宫，而应该是卢浮宫内部等）、构图、元素、拍照视角、是否是地图图片；
+    * 只要图片中有地图、或者是手机截图，就属于地图图片；
+
+    # 输出格式
+    * 具体地点：
+    * 图片url：
+    * 图片描述：
+    * 是否是地图图片：
+
+    # 要求
+    * 必须严格按照输出格式中的格式输出！
+    * 图片url只能来自于小红书帖子中的图片url，不能来自于其他地方；
+    * 你必须仔细观察后输出准确的具体地点信息，你会参考小红书帖子的内容，校准你的具体地点信息，如果把握度低于30%可以输出“未知”！
+
+    # 以下是获取到的小红书的帖子
+    '''
+
 
 def setup_gemini(api_key=None):
     """配置Gemini API"""
@@ -26,7 +48,7 @@ def setup_gemini(api_key=None):
     genai.configure(api_key=api_key)
     
     # 返回模型
-    return genai.GenerativeModel(model_name="gemini-2.5-pro-exp-03-25")
+    return genai.GenerativeModel(model_name="gemini-2.5-pro-preview-03-25")
 
 def process_image(image_path):
     """处理图片，支持本地路径或URL"""
@@ -51,14 +73,18 @@ def process_multiple_images(image_paths):
             print(f"处理图片 {path} 时出错: {str(e)}")
     return images
 
-def analyze_images(model, images, user_prompt="请详细描述这些图片中的内容", system_prompt=None):
+
+
+def analyze_images(model,images,red_note,urls, user_prompt= user_prompt):
     """使用Gemini分析多张图片"""
+
+  
     try:
         if len(images) == 0:
             return "错误: 没有有效的图片可以分析"
             
         # 准备生成内容的请求
-        if system_prompt:
+        # if system_prompt:
             # 使用system prompt和user prompt
             generation_config = {
                 "temperature": 0.5,
@@ -75,14 +101,14 @@ def analyze_images(model, images, user_prompt="请详细描述这些图片中的
             ]
             
             model = genai.GenerativeModel(
-                model_name="gemini-pro-vision",
+                model_name="gemini-2.5-pro-preview-03-25",
                 generation_config=generation_config,
                 safety_settings=safety_settings,
                 system_instruction=system_prompt
             )
         
         # 构建请求内容：先放入提示词，然后放入所有图片
-        content = [user_prompt] + images
+        content = [user_prompt] + [red_note] + urls + images
         
         # 发送API请求，包含提示词和所有图片
         response = model.generate_content(content)
@@ -91,10 +117,12 @@ def analyze_images(model, images, user_prompt="请详细描述这些图片中的
         return f"分析时出错: {str(e)}"
 
 @mcp.tool()
-async def analyze_images_feature(urls: list[str]) -> str:
-    """分析图片特征
-    Args:
-        urls: 图片 URL 列表
+async def analyze_images_feature(red_note:str, urls: list[str]) -> str:
+    """可以用来分析和总结小红书的帖子中的图片
+    
+    Args:  
+        red_note: 小红书帖子里的全部文字内容
+        urls: 图片URL列表
     """
     # 获取API密钥 - 优先使用命令行参数，其次环境变量，最后使用默认值
     api_key = os.environ.get("GOOGLE_API_KEY") or DEFAULT_API_KEY
@@ -105,7 +133,7 @@ async def analyze_images_feature(urls: list[str]) -> str:
     if not images:
         return f"图片数据处理异常: 图片数据为空"
     
-    anslyz_result = analyze_images(model, images)
+    anslyz_result = analyze_images(model,images,red_note,urls)
     result = f"分析图片结果: {anslyz_result}\n"
     return result
 
